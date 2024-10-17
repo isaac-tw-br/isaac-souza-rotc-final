@@ -1,0 +1,157 @@
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crud-app
+
+---
+
+# Secret for Database Password
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-password-secret
+  namespace: crud-app
+type: Opaque
+data:
+  password: bXlfYXdlc29tZV9wYXNzd29yZAo=
+
+---
+
+# Persistent Volume and Persistent Volume Claim for Postgres
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+  namespace: crud-app
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/data"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: crud-app
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# Postgres Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+  namespace: crud-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:latest
+        ports:
+        - containerPort: 5432
+        env:
+        - name: db_password
+          valueFrom:
+            secretKeyRef:
+              name: db-password-secret
+              key: password
+        - name: db_username
+          value: postgres
+        - name: db_name
+          value: postgres
+        - name: db_address
+          value: postgres-service  
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: db-data
+      volumes:
+      - name: db-data
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+
+---
+# Postgres Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: crud-app
+spec:
+  selector:
+    app: postgres
+  ports:
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+  type: ClusterIP
+
+---
+# Backend API Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api-deployment
+  namespace: crud-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-api
+  template:
+    metadata:
+      labels:
+        app: backend-api
+    spec:
+      containers:
+      - name: backend-api
+        image: rotc-assignment-backend
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: db_password
+          valueFrom:
+            secretKeyRef:
+              name: db-password-secret
+              key: password
+        - name: db_username
+          value: postgres
+        - name: db_name
+          value: postgres
+        - name: db_address
+          value: postgres-service
+
+
+---
+# Backend API Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-api-service
+  namespace: crud-app
+spec:
+  selector:
+    app: backend-api
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
